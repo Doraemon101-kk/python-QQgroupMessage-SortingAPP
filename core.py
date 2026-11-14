@@ -20,9 +20,10 @@ class Message:
 def normalize(raw):
     sender = raw.get('sender') or {}
     content = raw.get('content') or {}
+    if not isinstance(sender, dict) or not isinstance(content, dict):
+        raise ValueError('消息结构不受支持')
     text = content.get('text') or ''
-    
-    if not isinstance(sender, dict) or not isinstance(content, dict) or not isinstance(text, str):
+    if not isinstance(text, str):
         raise ValueError('消息结构不受支持')
     names = [str(sender.get(k) or '') for k in ('name', 'nickname', 'groupCard', 'uin')]
     name = next((n for n in names[:3] if n), '未知发送者')
@@ -40,39 +41,101 @@ def normalize(raw):
 
 
 def load_messages(path):
-    """Stream archive members without extracting; retain only searchable fields."""
-    path = Path(path)
+    """Read one QCE conversation from JSON, JSONL, a chunk folder, or ZIP."""
+    path = Path(path).expanduser()
     messages, skipped = [], 0
+    record_errors = (ValueError, TypeError, KeyError, AttributeError, OverflowError, OSError)
 
-    def read(stream):
+    def add_message(raw):
+        nonlocal skipped
+        try:
+            if not isinstance(raw, dict):
+                raise ValueError('不是消息对象')
+            messages.append(normalize(raw))
+        except record_errors:
+            skipped += 1
+
+    def read_jsonl(stream):
         nonlocal skipped
         for line in stream:
             if not line.strip():
                 continue
             try:
                 raw = json.loads(line.decode('utf-8-sig'))
-                if not isinstance(raw, dict):
-                    raise ValueError('不是消息对象')
-                messages.append(normalize(raw))
-            except (ValueError, TypeError, KeyError, AttributeError, OverflowError, OSError):
+            except (UnicodeError, json.JSONDecodeError):
                 skipped += 1
+                continue
+            add_message(raw)
 
-    if path.suffix.lower() == '.zip':
+    def read_json(stream, label):
+        try:
+            data = json.load(stream)
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f'{label}：JSON 内容无效或尚未导出完整，请重新导出后再试。') from exc
+        records = data.get('messages') if isinstance(data, dict) else data
+        if not isinstance(records, list):
+            raise ValueError(f'{label}：已识别 JSON，但没有找到 messages 消息数组。'
+                             '请提供原始导出文件以确认格式，不要只修改扩展名。')
+        for raw in records:
+            add_message(raw)
+
+    def select_members(names):
+        # Never treat manifest or macOS metadata as message data.
+        names = [n for n in names if '__MACOSX' not in Path(n).parts
+                 and not Path(n).name.startswith('._')]
+        chunks = sorted(n for n in names if n.lower().endswith('.jsonl'))
+        if chunks:
+            parents = {str(Path(n).parent) for n in chunks}
+            if len(parents) != 1:
+                raise ValueError('发现多个消息目录。请每次选择一个会话导出，避免混合不同聊天的上下文。')
+            return chunks, read_jsonl
+        docs = [n for n in names if n.lower().endswith('.json')
+                and Path(n).name.lower() != 'manifest.json']
+        if len(docs) == 1:
+            return docs, None
+        if len(docs) > 1:
+            raise ValueError('发现多个 JSON 文件，无法确定聊天来源。请解压后直接选择一个消息 JSON。')
+        raise ValueError('未找到消息数据：没有 JSONL 分块或消息 JSON。'
+                         '支持 QCE 普通 JSON、JSONL 及其 ZIP；manifest.json 本身不含消息。')
+
+    if not path.exists():
+        raise ValueError('文件或目录不存在，请重新选择；若位于网盘，请先下载到本机。')
+    if path.is_dir():
+        chunks = path / 'chunks'
+        folder = chunks if chunks.is_dir() else path
+        names, reader = select_members([str(p) for p in folder.iterdir() if p.is_file()])
+        for name in names:
+            with Path(name).open('rb') as stream:
+                if reader:
+                    reader(stream)
+                else:
+                    read_json(stream, Path(name).name)
+    elif zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
-            members = sorted(n for n in archive.namelist() if n.lower().endswith('.jsonl'))
-            if not members:
-                raise ValueError('ZIP 中没有 JSONL 分块，请导出 chunked JSONL 格式。')
-            for member in members:
-                with archive.open(member) as stream:
-                    read(stream)
+            names, reader = select_members([n for n in archive.namelist() if not n.endswith('/')])
+            try:
+                for name in names:
+                    with archive.open(name) as stream:
+                        if reader:
+                            reader(stream)
+                        else:
+                            read_json(stream, Path(name).name)
+            except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+                raise ValueError('无法读取压缩包内容，可能损坏、加密或使用了不支持的压缩方式。') from exc
     elif path.suffix.lower() == '.jsonl':
         with path.open('rb') as stream:
-            read(stream)
+            read_jsonl(stream)
+    elif path.suffix.lower() == '.json':
+        with path.open('rb') as stream:
+            read_json(stream, path.name)
+    elif path.suffix.lower() == '.zip':
+        raise ValueError('文件不是有效的 ZIP，可能已损坏或下载未完成。仅改名为 ZIP 不会转换格式。')
     else:
-        raise ValueError('请选择 QQ Chat Exporter 导出的 ZIP 或 JSONL 文件。')
+        raise ValueError('请选择 QCE 导出的 JSON、JSONL、ZIP 文件，或分块导出文件夹。'
+                         'HTML、TXT、Excel 和 BAK 暂不支持。')
     if not messages:
-        raise ValueError(f'没有读到有效消息（跳过 {skipped} 行），请检查导出格式。')
-    # Sorting is stable: preserve export order for messages with equal timestamps.
+        raise ValueError(f'没有读到有效消息（跳过 {skipped} 条）。'
+                         '请确认选择的是消息导出，而非配置或清单文件；空会话也可能没有消息。')
     messages.sort(key=lambda m: m.time)
     return messages, skipped
 

@@ -21,6 +21,7 @@ class App:
         self.events = queue.Queue()
         self.busy = False
         self.loaded_path = ''
+        self.source_label = tk.StringVar(value='当前未加载数据。支持 JSON、JSONL、ZIP 和分块导出文件夹。')
         self.active_sender = self.active_keywords = ''
         self.active_match_all = True
         self.match_mode = tk.StringVar(value='全部命中')
@@ -36,9 +37,13 @@ class App:
         file_row.pack(fill='x')
         ttk.Label(file_row, text='导出文件').pack(side='left')
         ttk.Entry(file_row, textvariable=self.path).pack(side='left', fill='x', expand=True, padx=8)
-        ttk.Button(file_row, text='选择文件', command=self.choose).pack(side='left')
+        self.choose_button = ttk.Button(file_row, text='选择文件', command=self.choose)
+        self.choose_button.pack(side='left')
+        self.folder_button = ttk.Button(file_row, text='选择文件夹', command=self.choose_folder)
+        self.folder_button.pack(side='left', padx=(6, 0))
         self.load_button = ttk.Button(file_row, text='读取文件', command=self.load)
         self.load_button.pack(side='left', padx=(8, 0))
+        ttk.Label(box, textvariable=self.source_label, wraplength=1050).pack(anchor='w', pady=(6, 0))
         filters = ttk.Frame(box, padding=(0, 12))
         filters.pack(fill='x')
         ttk.Label(filters, text='发送者').pack(side='left')
@@ -87,21 +92,31 @@ class App:
         root.after(100, self.poll)
 
     def choose(self):
-        path = filedialog.askopenfilename(filetypes=[('QQ 导出 ZIP / JSONL', '*.zip *.jsonl'), ('全部文件', '*.*')])
+        if self.busy:
+            return
+        path = filedialog.askopenfilename(filetypes=[('QQ 聊天记录', '*.json *.jsonl *.zip'), ('全部文件', '*.*')])
+        if path:
+            self.path.set(path)
+
+    def choose_folder(self):
+        if self.busy:
+            return
+        path = filedialog.askdirectory(title='选择单个会话的分块导出文件夹')
         if path:
             self.path.set(path)
 
     def set_busy(self, value):
         self.busy = value
-        for button in (self.load_button, self.search_button, self.export_button):
+        for button in (self.load_button, self.search_button, self.export_button,
+                       self.choose_button, self.folder_button):
             button.configure(state='disabled' if value else 'normal')
 
-    def background(self, fn):
+    def background(self, fn, operation="操作"):
         def run():
             try:
                 self.events.put(('done', fn()))
             except Exception as exc:
-                self.events.put(('error', str(exc)))
+                self.events.put(('error', (operation, str(exc))))
         threading.Thread(target=run, daemon=True).start()
 
     def load(self):
@@ -110,10 +125,12 @@ class App:
         path = self.path.get().strip().strip('"')
         if not path:
             self.choose()
-            return
+            path = self.path.get().strip().strip('"')
+            if not path:
+                return
         self.set_busy(True)
         self.status.set('正在读取文件，请稍候……')
-        self.background(lambda: ('load', path, load_messages(path)))
+        self.background(lambda: ('load', path, load_messages(path)), operation='读取 ' + Path(path).name)
 
     def poll(self):
         try:
@@ -123,11 +140,14 @@ class App:
         else:
             self.set_busy(False)
             if kind == 'error':
-                self.status.set('操作失败；先前已读取的数据仍可使用。')
-                messagebox.showerror('无法完成操作', data)
+                operation, reason = data
+                current = f'当前仍显示之前的数据：{self.loaded_path}' if self.loaded_path else '当前没有已加载的数据。'
+                self.status.set(f'{operation}失败。{current}')
+                messagebox.showerror('无法完成操作', f'{operation}失败：\n{reason}\n\n{current}')
             elif data[0] == 'load':
                 _, self.loaded_path, result = data
                 self.messages, skipped = result
+                self.source_label.set(f'当前已加载：{self.loaded_path} ｜ {len(self.messages):,} 条消息 ｜ 跳过 {skipped} 条')
                 self.hits = []
                 self.tree.delete(*self.tree.get_children())
                 self.show_text('正在搜索新文件……')
@@ -211,7 +231,7 @@ class App:
 
 def main():
     parser = argparse.ArgumentParser(description='本地 QQ 群聊检索器')
-    parser.add_argument('--file', help='ZIP 或 JSONL 路径')
+    parser.add_argument('--file', help='JSON、JSONL、ZIP 或分块导出文件夹路径')
     parser.add_argument('--sender', default='')
     parser.add_argument('--keywords', default='')
     parser.add_argument('--any', dest='match_any', action='store_true', help='多个关键词任意命中；默认全部命中')
