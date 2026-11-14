@@ -1,0 +1,5 @@
+# Python >= 3.10
+# No third-party Python packages are required.
+# tkinter/ttk ship with standard python.org Windows installers.
+# On Linux, install tkinter with your OS package manager (e.g. python3-tk).
+# Do not add tkinter, pathlib, dataclasses, or zipfile as pip dependencies.

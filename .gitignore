@@ -1,0 +1,9 @@
+# Only these reviewed source/documentation files may be tracked.
+# Add a new allowlist entry deliberately when introducing a public file.
+/*
+!/.gitignore
+!/requirements.txt
+!/README.md
+!/app.py
+!/core.py
+!/launch.cmd
