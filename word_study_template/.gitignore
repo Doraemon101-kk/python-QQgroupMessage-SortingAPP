@@ -1,0 +1,10 @@
+/*
+!/.gitignore
+!/ARCHITECTURE.md
+!/IMPLEMENTATION_GUIDE.md
+!/README.md
+!/study.example.json
+!/requirements.txt
+!/word_study/
+/word_study/*
+!/word_study/*.py

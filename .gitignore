@@ -1,9 +1,38 @@
-# Only these reviewed source/documentation files may be tracked.
-# Add a new allowlist entry deliberately when introducing a public file.
+# Public source allowlist. Data, reports, local configs and tests stay local.
 /*
 !/.gitignore
-!/requirements.txt
 !/README.md
-!/app.py
-!/core.py
-!/launch.cmd
+!/qq_chat_search/
+/qq_chat_search/*
+!/qq_chat_search/.gitignore
+!/qq_chat_search/README.md
+!/qq_chat_search/requirements.txt
+!/qq_chat_search/app.py
+!/qq_chat_search/core.py
+!/qq_chat_search/launch.cmd
+!/word_study_template/
+/word_study_template/*
+!/word_study_template/.gitignore
+!/word_study_template/README.md
+!/word_study_template/ARCHITECTURE.md
+!/word_study_template/IMPLEMENTATION_GUIDE.md
+!/word_study_template/requirements.txt
+!/word_study_template/study.example.json
+!/word_study_template/word_study/
+/word_study_template/word_study/*
+!/word_study_template/word_study/__init__.py
+!/word_study_template/word_study/__main__.py
+!/word_study_template/word_study/cli.py
+!/word_study_template/word_study/cloud_plot.py
+!/word_study_template/word_study/config.py
+!/word_study_template/word_study/display.py
+!/word_study_template/word_study/models.py
+!/word_study_template/word_study/monthly_plot.py
+!/word_study_template/word_study/plot_support.py
+!/word_study_template/word_study/project_bridge.py
+!/word_study_template/word_study/report.py
+!/word_study_template/word_study/service.py
+!/word_study_template/word_study/storage.py
+!/word_study_template/word_study/study.py
+!/word_study_template/word_study/task_runner.py
+!/word_study_template/word_study/visualization.py

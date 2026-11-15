@@ -1,0 +1,2 @@
+# Python >= 3.10. Matplotlib is required only for chart generation.
+matplotlib>=3.6,<4
