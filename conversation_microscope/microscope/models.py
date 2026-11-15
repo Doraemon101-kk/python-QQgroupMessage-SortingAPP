@@ -25,3 +25,4 @@ class TimelineView:
     # (minute of day, row, count) when density mode is active.
     density: tuple[tuple[int, int, int], ...] = ()
     row_kinds: tuple[bool, ...] = ()
+    day_start: int = 0

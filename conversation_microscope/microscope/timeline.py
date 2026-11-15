@@ -1,7 +1,7 @@
 """Pure indexing and viewport calculation. No GUI or plotting imports."""
 from bisect import bisect_left
 from collections import Counter, OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 from .models import Point, TimelineView
 
@@ -19,14 +19,16 @@ def display_sender(message):
 
 
 class TimelineIndex:
-    def __init__(self, corpus):
+    def __init__(self, corpus, day_start=0):
+        if day_start not in (0,4):raise ValueError('统计日起点仅支持0点或4点')
+        self.day_start = day_start
         self.corpus = corpus
         days = {}
         names = {}
         for index, message in enumerate(corpus.messages):
             stamp = datetime.strptime(message.time, '%Y-%m-%d %H:%M:%S')
-            day = stamp.strftime('%Y-%m-%d')
-            second = stamp.hour * 3600 + stamp.minute * 60 + stamp.second
+            day = (stamp-timedelta(hours=day_start)).strftime('%Y-%m-%d')
+            second = (stamp.hour * 3600 + stamp.minute * 60 + stamp.second-day_start*3600)%86400
             days.setdefault(day, []).append((second, index))
             names.setdefault(row_key(message), len(names))
         self.days = tuple(sorted(days))
@@ -70,11 +72,11 @@ class TimelineIndex:
                 continue
             stamp = message.time[11:]
             h, m, s = map(int, stamp.split(':'))
-            points.append(Point(original, h * 3600 + m * 60 + s, rows[row_key(message)], is_system(message)))
+            points.append(Point(original, (h * 3600 + m * 60 + s-self.day_start*3600)%86400, rows[row_key(message)], is_system(message)))
         dense = len(points) > max_points
         density = tuple((minute, row, count) for (minute, row), count in
                         sorted(Counter((int(p.second // 60), p.row) for p in points).items())) if dense else ()
-        return TimelineView(day, start, end, len(selected), labels, () if dense else tuple(points), dense, density, tuple(key[0] for key in visible_names))
+        return TimelineView(day, start, end, len(selected), labels, () if dense else tuple(points), dense, density, tuple(key[0] for key in visible_names), self.day_start)
 
     def sender_count(self, day, start, end, include_system=True):
         return len({row_key(self.corpus.messages[i]) for i in self.indices(day, start, end, include_system)})
@@ -89,3 +91,19 @@ def context_text(corpus, original_index, radius=3):
         sender = display_sender(message)
         lines.extend([f'{"▶ 选中" if i == original_index else "上下文"} | {message.time} | {sender}', message.text, ''])
     return '\n'.join(lines)
+
+
+def cumulative_counts(bins):
+    """Minute counts integrate to counts at minute boundaries, starting at zero."""
+    values = [0]
+    for count in bins:
+        if type(count) is not int or count < 0:
+            raise ValueError('分钟消息量应为非负整数')
+        values.append(values[-1] + count)
+    return tuple(values)
+
+
+def cumulative_fraction(bins):
+    values = cumulative_counts(bins)
+    total = values[-1]
+    return tuple(value / total if total else 0.0 for value in values)
