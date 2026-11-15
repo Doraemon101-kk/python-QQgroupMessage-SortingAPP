@@ -1,11 +1,13 @@
 """Read QQ Chat Exporter JSONL files and search messages. Standard library only."""
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 import json
 from pathlib import Path
 import zipfile
 
 LOCAL_TZ = timezone(timedelta(hours=8))
+MIN_DATE = date(2020, 9, 1)
+MAX_DATE = date(2027, 5, 24)
 
 
 @dataclass(frozen=True)
@@ -140,12 +142,45 @@ def load_messages(path):
     return messages, skipped
 
 
-def search(messages, sender='', keywords='', match_all=True):
+def calendar_months():
+    """All selectable calendar months, newest first; boundary days checked by picker."""
+    first = MIN_DATE.year * 12 + MIN_DATE.month - 1
+    last = MAX_DATE.year * 12 + MAX_DATE.month - 1
+    return [f'{number//12:04d}-{number%12+1:02d}'
+            for number in range(last, first-1, -1)]
+
+
+def date_bounds(start_date='', end_date=''):
+    """Inclusive user dates become [start midnight, next midnight), Beijing time."""
+    def parse(value):
+        if not value:
+            return None
+        try:
+            result = datetime.strptime(value, '%Y-%m-%d')
+            if result.strftime('%Y-%m-%d') != value:
+                raise ValueError()
+            return result
+        except ValueError as exc:
+            raise ValueError('日期格式应为 YYYY-MM-DD，例如 2026-09-01。') from exc
+    start, end = parse(start_date), parse(end_date)
+    if start and end and start > end:
+        raise ValueError('开始日期不能晚于结束日期，请重新选择。')
+    lower = start.strftime('%Y-%m-%d %H:%M:%S') if start else None
+    upper = (end + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S') if end else None
+    return lower, upper
+
+
+def search(messages, sender='', keywords='', match_all=True, start_date='', end_date=''):
     """Match sender fields and either all or any literal keyword. Empty means unrestricted."""
+    lower, upper = date_bounds(start_date, end_date)
     sender = sender.strip().casefold()
     words = keywords.casefold().split()
     hits = []
     for i, message in enumerate(messages):
+        if lower and message.time < lower:
+            continue
+        if upper and message.time >= upper:
+            continue
         if sender and sender not in message.aliases:
             continue
         text = message.text.casefold()
@@ -169,10 +204,14 @@ def context_text(messages, index, radius=3):
     return '\n'.join(lines)
 
 
-def export_markdown(path, messages, hits, sender='', keywords='', radius=3, match_all=True):
+def export_markdown(path, messages, hits, sender='', keywords='', radius=3, match_all=True,
+                    start_date='', end_date=''):
     # Quote all untrusted message lines so they remain distinguishable from our headings.
+    date_bounds(start_date, end_date)
     with Path(path).open('w', encoding='utf-8') as out:
         out.write('# 群聊检索结果\n\n')
+        out.write(f'日期范围（北京时间）：{start_date or "不限"} 至 {end_date or "不限"}\n\n')
+        out.write('日期仅限制命中消息；前后文可能跨越筛选日期。\n\n')
         mode = '全部命中' if match_all else '任意命中'
         out.write(f'关键词模式：{mode}\n\n')
         for label, value in [('发送者条件', sender or '不限'), ('关键词条件', keywords or '不限')]:
