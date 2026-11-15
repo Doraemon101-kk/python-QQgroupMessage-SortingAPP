@@ -1,0 +1,9 @@
+/*
+!/.gitignore
+!/README.md
+!/ARCHITECTURE.md
+!/requirements.txt
+!/launch.cmd
+!/microscope/
+/microscope/*
+!/microscope/*.py

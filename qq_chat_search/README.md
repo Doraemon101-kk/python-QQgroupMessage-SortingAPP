@@ -68,3 +68,7 @@ python app.py --start-date 2026-09-01 --end-date 2026-09-30
 ```powershell
 python app.py --file "聊天记录.zip" --keywords "示例关键词" --start-date 2026-09-01 --end-date 2026-09-30 --output "检索结果.md"
 ```
+
+## 扩展接口
+
+core.Message 新增 is_system 字段，默认 False，兼容旧的五参数构造方式。读取时保留导出器明确的 system=true 或 type=system 标记，供对话显微镜区分系统通知与成员消息；检索结果和研究统计默认仍保留全部记录。

@@ -17,6 +17,7 @@ class Message:
     aliases: str
     text: str
     message_id: str
+    is_system: bool = False
 
 
 def normalize(raw):
@@ -39,7 +40,8 @@ def normalize(raw):
     else:
         dt = datetime.fromtimestamp(float(raw['timestamp']) / 1000, timezone.utc)
     return Message(dt.astimezone(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S'),
-                   name, '\n'.join(names).casefold(), text, str(raw.get('id') or ''))
+                   name, '\n'.join(names).casefold(), text, str(raw.get('id') or ''),
+                   raw.get('system') is True or str(raw.get('type', '')).casefold() == 'system')
 
 
 def load_messages(path):
